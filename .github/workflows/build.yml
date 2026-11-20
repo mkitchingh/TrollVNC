@@ -108,6 +108,11 @@ jobs:
         with:
           xcode-version: "16.2"
 
+      - name: Install iOS runtime required by storyboard compiler
+        run: |
+          xcrun simctl list runtimes
+          xcodebuild -downloadPlatform iOS
+
       - name: Generate Managed.plist (managed build)
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.is_managed == true }}
         env:
