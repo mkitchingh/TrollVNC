@@ -1,0 +1,75 @@
+name: Preserve verified TrollStore installer
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/preserve-installer.yml']
+  workflow_dispatch:
+permissions:
+  actions: read
+  contents: write
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Download verified installer
+        uses: actions/download-artifact@v4
+        with:
+          name: packages-bootstrap
+          run-id: 44800933503
+          github-token: ${{ github.token }}
+          path: release-files
+      - name: Verify and publish persistent download
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const fs = require('fs');
+            const crypto = require('crypto');
+            const repo = context.repo;
+            const tag = 'trollstore-3.2-272';
+            const source = '96857e4a04d0f7bfbb31d602ebf72fab9b985453';
+            const installerName = 'TrollVNC_3.2-272.tipa';
+            const expected = '60230688cc3ea18caff4060a813c41cf02ff9f9474b3a36c55935e4a98e7be14';
+            const hash = bytes => crypto.createHash('sha256').update(bytes).digest('hex');
+            const installer = fs.readFileSync('release-files/' + installerName);
+            if (hash(installer) !== expected || installer.length !== 2334420) {
+              throw new Error('Installer differs from the verified build; refusing publication.');
+            }
+            const {data: zipData} = await github.rest.repos.downloadZipballArchive({...repo, ref: source});
+            const sourceZip = Buffer.from(zipData);
+            if (sourceZip[0] !== 0x50 || sourceZip[1] !== 0x4b) throw new Error('Invalid source archive');
+            const {data: licenseData} = await github.rest.repos.getContent({...repo, path: 'COPYING', ref: source});
+            const license = Buffer.from(licenseData.content, 'base64');
+            const assets = [
+              {name: installerName, bytes: installer, type: 'application/octet-stream'},
+              {name: 'TrollVNC-source-96857e4.zip', bytes: sourceZip, type: 'application/zip'},
+              {name: 'COPYING.txt', bytes: license, type: 'text/plain'}
+            ];
+            const checksums = assets.map(a => hash(a.bytes) + '  ' + a.name).join('\n') + '\n';
+            assets.push({name: 'SHA256SUMS.txt', bytes: Buffer.from(checksums), type: 'text/plain'});
+            let existing;
+            try { existing = (await github.rest.repos.getReleaseByTag({...repo, tag})).data; }
+            catch (error) { if (error.status !== 404) throw error; }
+            if (existing) throw new Error('Release already exists; refusing to overwrite it: ' + existing.html_url);
+            const {data: release} = await github.rest.repos.createRelease({
+              ...repo, tag_name: tag, target_commitish: source,
+              name: 'TrollVNC 3.2-272 — TrollStore community build',
+              body: "Community TrollStore build of [TrollVNC](https://github.com/owngoal-dev/TrollVNC), credited to its upstream authors and contributors.\n\nDownload the `.tipa` asset and install it with TrollStore.\n\n- Requires a working TrollStore installation.\n- Tested on an iPhone 6s running iOS 15.8.4 with TightVNC Viewer on Windows.\n- In TightVNC, enter `PHONE_IP::5901` (two colons) for the default port.\n- Set your own full-access password in TrollVNC.\n- If the wheel scrolls backwards, toggle Natural Scroll in TrollVNC.\n\nThe source archive and GPLv2 license are included with the release. See the upstream README for additional features and configuration.\n\nInstaller source: [96857e4](https://github.com/mkitchingh/TrollVNC/tree/96857e4a04d0f7bfbb31d602ebf72fab9b985453).\n\nSHA-256: `60230688cc3ea18caff4060a813c41cf02ff9f9474b3a36c55935e4a98e7be14`.\n",
+              draft: true, prerelease: false
+            });
+            for (const asset of assets) {
+              const result = await github.rest.repos.uploadReleaseAsset({
+                ...repo, release_id: release.id, name: asset.name, data: asset.bytes,
+                headers: {'content-type': asset.type, 'content-length': asset.bytes.length}
+              });
+              if (result.data.size !== asset.bytes.length) throw new Error('Asset upload size mismatch: ' + asset.name);
+            }
+            const {data: uploaded} = await github.rest.repos.listReleaseAssets({...repo, release_id: release.id, per_page: 100});
+            for (const expectedAsset of assets) {
+              const actual = uploaded.find(a => a.name === expectedAsset.name);
+              if (!actual || actual.size !== expectedAsset.bytes.length) throw new Error('Missing or incorrect release asset');
+              if (actual.digest && actual.digest !== 'sha256:' + hash(expectedAsset.bytes)) throw new Error('Release asset checksum mismatch');
+            }
+            const {data: published} = await github.rest.repos.updateRelease({...repo, release_id: release.id, draft: false, make_latest: 'true'});
+            core.info('Published: ' + published.html_url);
+            await core.summary.addHeading('Persistent installer download published').addLink('Open release', published.html_url).write();
