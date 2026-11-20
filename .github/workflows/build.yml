@@ -2,7 +2,7 @@ name: Build TrollVNC
 
 on:
   push:
-    branches: [release]
+    branches: [release, main]
   workflow_dispatch:
     inputs:
       is_managed:
@@ -70,11 +70,11 @@ env:
 
 jobs:
   build:
-    runs-on: macos-14
+    runs-on: macos-15
 
     strategy:
       matrix:
-        scheme: ["default", "rootless", "roothide", "bootstrap"]
+        scheme: ["bootstrap"]
 
     steps:
       - name: Checkout repository
@@ -181,7 +181,7 @@ jobs:
   release:
     if: github.event_name == 'push' && github.ref == 'refs/heads/release'
     needs: build
-    runs-on: macos-14
+    runs-on: macos-15
 
     steps:
       - name: Checkout repository
