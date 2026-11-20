@@ -2,7 +2,7 @@ name: Build TrollVNC
 
 on:
   push:
-    branches: [release, main]
+    tags: ['v*']
   workflow_dispatch:
     inputs:
       is_managed:
@@ -62,6 +62,9 @@ on:
         description: Repeater ID (numeric)
         required: false
         default: ""
+
+permissions:
+  contents: read
 
 env:
   FINALPACKAGE: 1
@@ -184,35 +187,28 @@ jobs:
           if-no-files-found: warn
 
   release:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/release'
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     needs: build
-    runs-on: macos-15
-
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
     steps:
-      - name: Checkout repository
+      - name: Checkout release source
         uses: actions/checkout@v4
-
-      - name: Download all package artifacts
+      - name: Download TrollStore installer
         uses: actions/download-artifact@v4
         with:
-          pattern: packages-*
+          name: packages-bootstrap
           path: release-packages
-          merge-multiple: true
-
-      - name: Create release tag
-        id: tag
+      - name: Package source and checksum
         run: |
-          # Read PACKAGE_VERSION from Makefile
-          PACKAGE_VERSION=$(grep 'PACKAGE_VERSION' Makefile | cut -d' ' -f4)
-          TAG_NAME="v$PACKAGE_VERSION"
-          echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
-        with:
-          tag_name: ${{ steps.tag.outputs.tag_name }}
-          name: Release ${{ steps.tag.outputs.tag_name }}
-          body_path: CHANGELOG.md
-          files: release-packages/**/*
-          draft: false
-          prerelease: false
+          git archive --format=zip --prefix=TrollVNC-source/ -o release-packages/TrollVNC-source.zip HEAD
+          cp COPYING release-packages/COPYING.txt
+          cd release-packages
+          sha256sum *.tipa TrollVNC-source.zip COPYING.txt > SHA256SUMS.txt
+      - name: Prepare draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          gh release create "$RELEASE_TAG" release-packages/* --verify-tag --draft --title "TrollVNC $RELEASE_TAG — TrollStore build" --notes-file RELEASE_NOTES.md
