@@ -142,7 +142,7 @@ jobs:
       - name: Build package (${{ matrix.scheme }})
         run: |
           source devkit/${{ matrix.scheme }}.sh
-          FINALPACKAGE=1 gmake clean package
+          FINALPACKAGE=1 gmake clean package messages=yes TARGET_XCPRETTY=
 
       - name: Prepare artifacts
         run: |
