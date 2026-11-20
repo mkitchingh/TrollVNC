@@ -52,7 +52,7 @@ jobs:
             catch (error) { if (error.status !== 404) throw error; }
             if (existing) throw new Error('Release already exists; refusing to overwrite it: ' + existing.html_url);
             const {data: release} = await github.rest.repos.createRelease({
-              ...repo, tag_name: tag, target_commitish: source,
+              ...repo, tag_name: tag, target_commitish: context.sha,
               name: 'TrollVNC 3.2-272 — TrollStore community build',
               body: "Community TrollStore build of [TrollVNC](https://github.com/owngoal-dev/TrollVNC), credited to its upstream authors and contributors.\n\nDownload the `.tipa` asset and install it with TrollStore.\n\n- Requires a working TrollStore installation.\n- Tested on an iPhone 6s running iOS 15.8.4 with TightVNC Viewer on Windows.\n- In TightVNC, enter `PHONE_IP::5901` (two colons) for the default port.\n- Set your own full-access password in TrollVNC.\n- If the wheel scrolls backwards, toggle Natural Scroll in TrollVNC.\n\nThe source archive and GPLv2 license are included with the release. See the upstream README for additional features and configuration.\n\nInstaller source: [96857e4](https://github.com/mkitchingh/TrollVNC/tree/96857e4a04d0f7bfbb31d602ebf72fab9b985453).\n\nSHA-256: `60230688cc3ea18caff4060a813c41cf02ff9f9474b3a36c55935e4a98e7be14`.\n",
               draft: true, prerelease: false
